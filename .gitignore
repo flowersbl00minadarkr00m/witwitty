@@ -12,3 +12,6 @@ vite.config.d.ts
 *.env
 evidence/
 spikes/
+
+.vercel
+.env*
