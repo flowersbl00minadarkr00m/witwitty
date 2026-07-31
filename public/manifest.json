@@ -1,0 +1,17 @@
+{
+  "manifest_version": 3,
+  "name": "WitWitty",
+  "description": "Understand unfamiliar language in context and build durable recall.",
+  "version": "0.1.0",
+  "permissions": ["activeTab", "scripting", "sidePanel", "storage"],
+  "optional_host_permissions": ["https://*/*"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "Open WitWitty Context Lens"
+  },
+  "side_panel": {
+    "default_path": "panel.html"
+  }
+}

@@ -1,0 +1,14 @@
+node_modules/
+dist/
+*.tsbuildinfo
+output/
+.playwright-cli/
+fixtures/dist/
+vite.config.js
+vite.config.d.ts
+.vercel
+.env
+.env.*
+*.env
+evidence/
+spikes/

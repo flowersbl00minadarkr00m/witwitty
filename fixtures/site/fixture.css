@@ -1,0 +1,7 @@
+:root { color-scheme: light; font-family: system-ui, sans-serif; line-height: 1.6; }
+body { margin: 0 auto; max-width: 72ch; padding: 2rem; color: #17202a; }
+header, main, footer { margin-block: 1.5rem; }
+code, pre { background: #f2f4f7; border-radius: .25rem; padding: .15rem .3rem; }
+pre { padding: 1rem; overflow: auto; }
+input, textarea, button { font: inherit; padding: .45rem; }
+table { border-collapse: collapse; width: 100%; } th, td { border: 1px solid #aab5c0; padding: .5rem; text-align: left; }

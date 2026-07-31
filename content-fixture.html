@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>WitWitty deterministic pipeline fixture</title>
+    <style>
+      body { max-width: 760px; margin: 40px auto; padding: 0 24px; color: #172038; font: 18px/1.6 Georgia, serif; }
+      h1 { font-size: 42px; line-height: 1.12; }
+      button { min-height: 44px; padding: 0 16px; border: 1px solid #777; border-radius: 8px; background: white; font: 700 14px/1 system-ui, sans-serif; cursor: pointer; }
+      pre { overflow: auto; padding: 16px; border-radius: 8px; background: #f4f5f8; font: 12px/1.45 ui-monospace, monospace; }
+    </style>
+    <script>
+      window.__witwittyMessages = [];
+      window.__witwittyListeners = [];
+      window.chrome = {
+        runtime: {
+          sendMessage(message) {
+            window.__witwittyMessages.push(message);
+            document.getElementById("messages").textContent = JSON.stringify(window.__witwittyMessages, null, 2);
+          },
+          onMessage: { addListener(listener) { window.__witwittyListeners.push(listener); } },
+        },
+        storage: {
+          local: {
+            async get() { return { knownTerms: ["observability"], notJargonTerms: [] }; },
+          },
+        },
+      };
+      window.runWitWittyScan = () => window.__witwittyListeners.forEach((listener) => listener({ type: "WITWITTY_SCAN_PAGE" }));
+      window.sendWitWittyMessage = (message) => window.__witwittyListeners.forEach((listener) => listener(message));
+    </script>
+  </head>
+  <body>
+    <article>
+      <h1>Operating a reliable service</h1>
+      <p>An idempotent operation can be retried safely. Keeping the handler idempotent prevents duplicate work.</p>
+      <p>Our ontology connects service concepts, but the article does not yet say whether it means a knowledge model or the philosophy of being.</p>
+      <p>The SLO governs availability, and the SLO is reviewed every quarter.</p>
+      <p>Provenance means a record of where information came from and how it changed.</p>
+      <p>Observability uses logs, metrics, and traces, but this fixture treats it as a known term.</p>
+      <p>A link remains intact when it mentions <a href="https://example.com/heuristic">a useful heuristic</a>.</p>
+      <p id="protected-content">
+        Protected uses stay unchanged:
+        <a href="https://example.com/idempotent">idempotent link</a>,
+        <code>idempotentCall()</code>,
+        <kbd>idempotent</kbd>,
+        <var>idempotent</var>,
+        <math aria-label="idempotent formula"><mi>idempotent</mi><mo>=</mo><mi>f</mi></math>,
+        and <span contenteditable="true">idempotent editable text</span>.
+      </p>
+    </article>
+    <button id="scan" type="button" onclick="runWitWittyScan()">Scan fixture</button>
+    <button id="simpler" type="button" onclick="sendWitWittyMessage({ type: 'WITWITTY_SET_TEXT_MODE', term: 'idempotent', mode: 'simpler' })">Simpler idempotent</button>
+    <button id="original" type="button" onclick="sendWitWittyMessage({ type: 'WITWITTY_SET_TEXT_MODE', term: 'idempotent', mode: 'original' })">Original idempotent</button>
+    <button id="clear" type="button" onclick="sendWitWittyMessage({ type: 'WITWITTY_REMOVE_ALL_ANNOTATIONS' })">Clear annotations</button>
+    <h2>Extension messages</h2>
+    <pre id="messages">No messages yet.</pre>
+    <script src="/dist/content.js?v=2"></script>
+  </body>
+</html>
