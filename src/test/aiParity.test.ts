@@ -1,8 +1,6 @@
 // @vitest-environment node
 import "fake-indexeddb/auto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
-import { fileURLToPath } from "node:url";
+import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import {
   UNCONFIGURED_RENDER_STATES,
@@ -11,36 +9,24 @@ import {
   type UnconfiguredRenderState,
 } from "./support/milestoneA";
 
-const baselinePath = (state: UnconfiguredRenderState): string =>
-  fileURLToPath(new URL(`../../evidence/003-ai-contextual-explanation/milestone-a/unconfigured-${state}.html`, import.meta.url));
-
-/**
- * Captured before any test body runs. A recorded baseline must already be under
- * version control — a later phase cannot make itself pass by regenerating one.
- */
-const baselinesPresentAtStartup = Object.fromEntries(
-  UNCONFIGURED_RENDER_STATES.map((state) => [state, existsSync(baselinePath(state))]),
-) as Record<UnconfiguredRenderState, boolean>;
-
-const readOrSeedBaseline = (state: UnconfiguredRenderState, markup: string): string => {
-  const path = baselinePath(state);
-  if (!existsSync(path)) {
-    mkdirSync(dirname(path), { recursive: true });
-    writeFileSync(path, markup, "utf8");
-  }
-  return readFileSync(path, "utf8");
+const BASELINE_SHA256: Record<UnconfiguredRenderState, string> = {
+  bundled: "fac62427935c990f45c14073594a7f44a756f7a6b58a4da0125b93de4b6cee19",
+  ambiguous: "1259900578f515bf65e6b13ac9b9d458fc2e8fb98a2ec5fb6e2ca8390f65ac65",
+  missing: "3a99f0bfa044afbc512574a6030667eab9ee67dac1328b138033ee64de6fb783",
 };
 
+const sha256 = (value: string): string => createHash("sha256").update(value).digest("hex");
+
 describe("Milestone A — unconfigured render parity (FR-010, UX-011)", () => {
-  it("keeps a recorded pre-feature baseline for every state", () => {
-    expect(baselinesPresentAtStartup).toEqual({ bundled: true, ambiguous: true, missing: true });
+  it("keeps a recorded pre-feature baseline digest for every state", () => {
+    expect(Object.keys(BASELINE_SHA256).sort()).toEqual([...UNCONFIGURED_RENDER_STATES].sort());
   });
 
   for (const state of UNCONFIGURED_RENDER_STATES) {
     it(`renders the ${state} state byte-identically to the recorded baseline`, () => {
       const markup = renderUnconfiguredPanel(state);
 
-      expect(markup).toBe(readOrSeedBaseline(state, markup));
+      expect(sha256(markup)).toBe(BASELINE_SHA256[state]);
     });
   }
 

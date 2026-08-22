@@ -5,12 +5,13 @@
  * dependencies. Run from app/: pnpm run evidence:build
  */
 
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { lstatSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 
 const APP_ROOT = process.cwd();
+const PNPM_EXECUTABLE = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
 const EVIDENCE_ROOT = resolve("evidence/release-stabilization");
 const BUILD_MANIFEST_PATH = join(EVIDENCE_ROOT, "build-manifest.json");
 const REQUIRED_RELEASE_FILES = [
@@ -20,9 +21,9 @@ const REQUIRED_RELEASE_FILES = [
   "dist/panel.html",
 ];
 const REQUIRED_COMMANDS = [
-  ["test", "pnpm test"],
-  ["typecheck", "pnpm typecheck"],
-  ["build", "pnpm build"],
+  ["test", PNPM_EXECUTABLE, ["test"]],
+  ["typecheck", PNPM_EXECUTABLE, ["typecheck"]],
+  ["build", PNPM_EXECUTABLE, ["build"]],
 ];
 const FINGERPRINT_INPUTS = [
   "src",
@@ -127,11 +128,12 @@ function summary(value) {
   return text.length > 500 ? text.slice(0, 500) : text;
 }
 
-function runCommand(command) {
+function runCommand(executable, args) {
+  const command = [executable, ...args].join(" ");
   const executed_utc = new Date().toISOString();
   console.log(`Running: ${command}`);
   try {
-    const stdout = execSync(command, { cwd: APP_ROOT, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+    const stdout = execFileSync(executable, args, { cwd: APP_ROOT, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
     return { command, exit_code: 0, status: "pass", executed_utc, ...(summary(stdout) ? { stdout_summary: summary(stdout) } : {}) };
   } catch (error) {
     const exitCode = Number.isInteger(error.status) ? error.status : 1;
@@ -149,11 +151,11 @@ function packageVersion(packageName) {
   }
 }
 
-function commandVersion(command) {
+function commandVersion(executable, args) {
   try {
-    return execSync(command, { cwd: APP_ROOT, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+    return execFileSync(executable, args, { cwd: APP_ROOT, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
   } catch (error) {
-    fail(`Cannot obtain version from ${command}: ${error.message}`);
+    fail(`Cannot obtain version from ${executable}: ${error.message}`);
   }
 }
 
@@ -327,15 +329,15 @@ function validateManifest(data) {
 function generateManifest() {
   const release = computeReleaseFiles();
   const sourceFingerprint = computeSourceFingerprint();
-  const commands = Object.fromEntries(REQUIRED_COMMANDS.map(([name, command]) => [name, runCommand(command)]));
+  const commands = Object.fromEntries(REQUIRED_COMMANDS.map(([name, executable, args]) => [name, runCommand(executable, args)]));
   const timestamp = new Date().toISOString().replace(/[-:.]/g, "").slice(0, 15).toLowerCase();
   const releaseIdentity = sha256(JSON.stringify(release.release_files));
   const manifest = {
     candidate_id: `release-${sourceFingerprint.fingerprint_value.slice(0, 12)}-${releaseIdentity.slice(0, 12)}-${timestamp}`,
     created_utc: new Date().toISOString(),
     app_version: JSON.parse(readFileSync(resolve("package.json"), "utf8")).version,
-    node_version: commandVersion("node --version"),
-    pnpm_version: commandVersion("pnpm --version"),
+    node_version: commandVersion("node", ["--version"]),
+    pnpm_version: commandVersion(PNPM_EXECUTABLE, ["--version"]),
     typescript_version: packageVersion("typescript"),
     vite_version: packageVersion("vite"),
     esbuild_version: packageVersion("esbuild"),
