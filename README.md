@@ -4,6 +4,10 @@ A Chrome extension that explains unfamiliar jargon right where you hit it — in
 
 [Live demo](https://witwitty-demo.vercel.app) · [Docs](docs/) · [License](LICENSE)
 
+## Series context
+
+WitWitty is a series-adjacent experiment in the same human-in-the-loop portfolio. It does not currently have a dedicated published installment; the broader writing is available from the [*Looping in the Human* author page](https://substack.com/@henryflowers45).
+
 ![WitWitty highlighting jargon in an article and showing its meaning in a side panel](docs/assets/hero.png)
 
 ## Features
@@ -19,7 +23,7 @@ A Chrome extension that explains unfamiliar jargon right where you hit it — in
 ## Quick start
 
 ```bash
-pnpm install
+pnpm install --frozen-lockfile
 pnpm build
 ```
 
