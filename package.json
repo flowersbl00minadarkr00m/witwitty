@@ -24,7 +24,7 @@
     "esbuild": "^0.28.2",
     "fake-indexeddb": "^6.2.5",
     "jsdom": "^26.1.0",
-    "typescript": "^5.9.3",
+    "typescript": "^7.0.2",
     "vite": "^7.3.6",
     "vitest": "^3.2.7"
   }
