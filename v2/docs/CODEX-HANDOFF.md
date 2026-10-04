@@ -1,5 +1,11 @@
 # Continue WitWitty 2.0 without rebuilding what is already done
 
+## Current state — 4 October 2026
+
+The handoff was applied to a full checkout, verified on Windows and pushed. [PR #8](https://github.com/flowersbl00minadarkr00m/witwitty/pull/8) is open against master. Use its feature branch; do not reapply the original patch or create a duplicate PR. Read the current verification and handoff before continuing. V2 Node tests now use `*.node.mjs`; native MV3 and synthetic-camera acceptance is `python v2/tests/native-platform.py --camera`. The 403 and offline-only constraints below describe the historical source handoff.
+
+## Historical source handoff
+
 You are continuing an implemented WitWitty 2.0 change, not starting from an empty idea. The handoff contains additive source, a patch, compiled mock-demo/extension artifacts, verification logs and a prepared PR body. Read `v2/README.md`, `v2/docs/decisions.md`, `v2/docs/verification.md`, and `v2/docs/handoff.md` first.
 
 Repository: `https://github.com/flowersbl00minadarkr00m/witwitty`

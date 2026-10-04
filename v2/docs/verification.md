@@ -11,6 +11,7 @@
 | Native Chromium MV3 / companion / synthetic-camera checks | **22 passed, 0 failed** |
 | Legacy Vitest suite | **131 passed, 0 failed** |
 | Legacy type checking and extension/demo build | PASS |
+| Remote publication | Branch pushed; PR #8 open against master; see its live CI checks |
 | Real webcam, physical calibration, live model/Jev calls | Not verified; owner hardware/credentials required |
 
 Environment: Windows, Node 24.17.0, TypeScript 5.8.3 for the isolated V2 build and 5.9.3 for legacy checks, Python 3.14, Playwright 1.63.0, Chromium 153.0.8010.12. The first native browser pass also succeeded with Playwright 1.57.0. Desktop/mobile screenshots were inspected.
@@ -45,7 +46,7 @@ Fixes discovered by native integration:
 - V2's Node tests use *.node.mjs, preventing legacy Vitest from collecting a different test runner's files.
 - Browser wait predicates use functions, keeping the test helper compatible with current Chromium CSP enforcement.
 
-Local evidence is in v2/artifacts/browser/results.json, v2/artifacts/native-platform/results.json, .git/v2-node-tests.log and .git/legacy-tests.log. GitHub CI runs the same native paths and uploads built surfaces and browser evidence. Publication/CI state is recorded in the handoff; local results never imply remote success.
+Local evidence is in `v2/artifacts/browser/results.json`, `v2/artifacts/native-platform/results.json`, `.git/v2-node-tests.log` and `.git/legacy-tests.log`. GitHub CI runs the same native paths and uploads built surfaces and browser evidence. [PR #8](https://github.com/flowersbl00minadarkr00m/witwitty/pull/8) is published; local results never imply remote success.
 
 ## Historical implementation environment
 

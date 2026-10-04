@@ -10,7 +10,7 @@ Fresh Windows results: 235 V2 Node tests, 28 native localhost browser flows and 
 
 Native extension acceptance verifies loading, the real action/activeTab grant, options/storage/exports, companion pairing and reviewed streams, exact restore/Exit, navigation cleanup, sensitive-site blocking and service-worker restart. Local MediaPipe assets are installed in this checkout. Actual worker/WASM/model execution passes with synthetic video on both localhost and extension origins. Real camera permission and hand accuracy are not claimed.
 
-Native checks found and fixed worker startup, stale camera startup cancellation and legacy/V2 test discovery. CI includes the native browser, extension and synthetic-camera paths. Publication status will be updated after the push and remote checks return.
+Native checks found and fixed worker startup, stale camera startup cancellation and legacy/V2 test discovery. The feature branch is pushed and [PR #8](https://github.com/flowersbl00minadarkr00m/witwitty/pull/8) is open against master. CI includes the native browser, extension and synthetic-camera paths; its live results and downloadable evidence are on the PR checks. No merge was performed.
 
 ## BUILT, NEEDS LOCAL VERIFICATION
 
