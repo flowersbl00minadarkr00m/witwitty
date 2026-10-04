@@ -214,7 +214,20 @@ with sync_playwright() as playwright:
 
     def cancellation():
         page, errors, _ = new_page(); original = page.locator('#reading').inner_html(); activate_lock(page)
-        page.evaluate("witwitty.scenario='model-timeout';witwitty.dispatch({type:'SET_MODE',mode:'Explain'});witwitty.dispatch({type:'RESTORE'})")
+        page.evaluate('() => new Promise(resolve => requestAnimationFrame(resolve))')
+        page.evaluate("""() => {
+          const original = window.requestAnimationFrame, callbacks = [];
+          window.requestAnimationFrame = callback => (callbacks.push(callback), callbacks.length);
+          try {
+            const target = document.querySelector('#source-log'), rect = target.getBoundingClientRect();
+            target.dispatchEvent(new PointerEvent('pointermove', {bubbles:true,clientX:rect.left+10,clientY:rect.top+10}));
+            witwitty.scenario='model-timeout';
+            witwitty.dispatch({type:'SET_MODE',mode:'Explain'});
+            witwitty.dispatch({type:'RESTORE'});
+          } finally { window.requestAnimationFrame = original; }
+          // Force an old queued pointer callback to run after Restore.
+          callbacks.forEach(callback => callback(performance.now()));
+        }""")
         settled(page); page.wait_for_timeout(450)
         expect(state(page)['phase'] == 'restored', 'Stale generation revived cancelled state')
         expect(page.locator('#reading').inner_html() == original, 'Stale generation painted after restore')

@@ -20,7 +20,7 @@ All ten vertical slices are built. Real-hand calibration, physical ergonomics an
 
 ## Native integration fixes
 
-MediaPipe 0.10.21's WASM loader needs `importScripts()`. A classic worker bootstrap imports the typed detector while retaining that API. Camera startup rejects stale permission results without stopping a newer session. V2 Node tests use `*.node.mjs` so legacy Vitest does not collect them. Browser wait predicates use functions for current Chromium CSP enforcement.
+MediaPipe 0.10.21's WASM loader needs `importScripts()`. A classic worker bootstrap imports the typed detector while retaining that API. Camera startup rejects stale permission results without stopping a newer session. Queued pointer events are bound to their interaction epoch, so old focus input cannot change a restored state. The browser cancellation test forces that ordering. V2 Node tests use `*.node.mjs` so legacy Vitest does not collect them. Browser wait predicates use functions for current Chromium CSP enforcement.
 
 ## Verification
 

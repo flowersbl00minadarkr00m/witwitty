@@ -45,6 +45,7 @@ Fixes discovered by native integration:
 - Startup cancellation checks prevent stale permission failures and streams from changing a new capture session.
 - V2's Node tests use *.node.mjs, preventing legacy Vitest from collecting a different test runner's files.
 - Browser wait predicates use functions, keeping the test helper compatible with current Chromium CSP enforcement.
+- PR CI exposed an old queued pointer callback changing a restored state. Reference input now checks its interaction epoch and cancels pending animation frames on teardown. The cancellation flow deliberately runs a queued pointer callback after Restore, while retaining the exact source and restored-state assertions.
 
 Local evidence is in `v2/artifacts/browser/results.json`, `v2/artifacts/native-platform/results.json`, `.git/v2-node-tests.log` and `.git/legacy-tests.log`. GitHub CI runs the same native paths and uploads built surfaces and browser evidence. [PR #8](https://github.com/flowersbl00minadarkr00m/witwitty/pull/8) is published; local results never imply remote success.
 

@@ -28,15 +28,24 @@ export function referenceInputs(runtime: Runtime): () => void {
   let scheduled = false;
   let x = 0;
   let y = 0;
+  let epoch = runtime.state.epoch;
+  let frame = 0;
   const owned = (event: Event) => event.composedPath().some(node => node instanceof Element && node.matches('[data-ww-owned]:not([data-ww-owned="lens"])'));
   const move = (event: PointerEvent) => {
     if (owned(event) || runtime.state.phase === 'inactive')
       return;
     x = event.clientX;
     y = event.clientY;
+    epoch = runtime.state.epoch;
     if (!scheduled) {
       scheduled = true;
-      requestAnimationFrame(() => { scheduled = false; runtime.dispatch({ type: 'MOVE_FOCUS', point: { x, y } }, 'mouse'); });
+      frame = requestAnimationFrame(() => {
+        scheduled = false;
+        // A queued point belongs to the interaction that received it.
+        // Restore, cancellation and locking invalidate earlier pending input.
+        if (epoch === runtime.state.epoch)
+          runtime.dispatch({ type: 'MOVE_FOCUS', point: { x, y } }, 'mouse');
+      });
     }
   };
   const select = (event: MouseEvent) => {
@@ -71,5 +80,5 @@ export function referenceInputs(runtime: Runtime): () => void {
   document.addEventListener('pointermove', move);
   document.addEventListener('mouseup', select);
   document.addEventListener('keydown', key);
-  return () => { document.removeEventListener('pointermove', move); document.removeEventListener('mouseup', select); document.removeEventListener('keydown', key); };
+  return () => { cancelAnimationFrame(frame); document.removeEventListener('pointermove', move); document.removeEventListener('mouseup', select); document.removeEventListener('keydown', key); };
 }
