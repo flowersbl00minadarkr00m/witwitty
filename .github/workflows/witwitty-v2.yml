@@ -1,0 +1,68 @@
+name: WitWitty V2 deterministic acceptance
+on:
+  pull_request:
+    paths: ['v2/**', '.github/workflows/witwitty-v2.yml']
+  push:
+    branches: ['master', 'feat/witwitty-2-spatial-lens']
+    paths: ['v2/**', '.github/workflows/witwitty-v2.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: witwitty-v2-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  reference-acceptance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+          package-manager-cache: false
+      - name: Install isolated, pinned compiler (no new production dependencies)
+        run: npm install --global typescript@5.8.3
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.11'
+      - name: Install browser test tooling
+        run: |
+          python -m pip install playwright==1.63.0
+          python -m playwright install --with-deps chromium
+      - name: Formatting and policy lint
+        run: |
+          node v2/scripts/format.mjs --check
+          node v2/scripts/lint.mjs
+      - name: Strict type check and build both surfaces
+        run: node v2/scripts/build.mjs
+      - name: Unit, fixture, real HTTP and extension SDK-boundary tests
+        run: node --test v2/tests/*.node.mjs
+      - name: Native-origin browser acceptance (not the constrained-environment harness)
+        run: python v2/tests/e2e.py --artifacts v2/artifacts/browser
+      - name: Install pinned local camera runtime and model
+        run: node v2/scripts/vendor-camera.mjs
+      - name: Rebuild with local camera assets
+        run: node v2/scripts/build.mjs
+      - name: Native extension and synthetic-camera acceptance
+        run: python v2/tests/native-platform.py --camera
+      - name: Upload demo and unpacked extension
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: witwitty-v2-reference-build
+          path: |
+            v2/dist/
+            v2/dist-extension/
+          retention-days: 14
+      - name: Upload browser evidence, including on failure
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: witwitty-v2-browser-evidence
+          path: |
+            v2/artifacts/browser/
+            v2/artifacts/native-platform/
+          if-no-files-found: ignore
+          retention-days: 14
