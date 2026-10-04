@@ -1,0 +1,41 @@
+{
+  "manifest_version": 3,
+  "name": "WitWitty 2.0 — Spatial Lens",
+  "version": "2.0.0",
+  "description": "An explicitly activated, reversible semantic reading lens. Local fixtures, gestures and a localhost companion.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAt61fKK2aBR/fSsQ6/nKwAd0ZcNl7FSfbh/R1AFaoDDgGZM2UrsKeqamVOdpl+k//uOV1Op8Bi5hgutSh91SsqCFCtfXRIFYqjsVGTtCJrsNvTfSYtNy59N/rR3qtK5kM85SAiBQucnXI7IjouVsChJ3TaL8NwRyz3KJqjRzLnnhb2AbyBwAZkV03DZYm1Y1W/IemF8b/lnd6KKM2biIeuu9KSzpt1vDaLCgBuSU4FokZGl5vhE3yl/u4dNwbVR7RwUyCNaNfNM5/2NOKr98nj7zbrMDEzDkBtcIwIxW13in+iay8MIoND3sNQsfFGzTKj64J9b3PwhWiF/KtKgeqSwIDAQAB",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage"
+  ],
+  "host_permissions": [
+    "http://127.0.0.1:4317/*"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "Activate WitWitty on this article"
+  },
+  "options_page": "options.html",
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'none';"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "extension/*.js",
+        "core/*.js",
+        "browser/*.js",
+        "gesture/*.js",
+        "fixtures/*.js"
+      ],
+      "matches": [
+        "http://*/*",
+        "https://*/*"
+      ]
+    }
+  ]
+}

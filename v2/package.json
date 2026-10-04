@@ -1,0 +1,20 @@
+{
+  "name": "@witwitty/spatial-v2",
+  "version": "2.0.0-preview.1",
+  "private": true,
+  "type": "module",
+  "description": "Dependency-light spatial reading engine, demo, extension and local companion",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "test": "node --test tests/*.node.mjs",
+    "demo": "node scripts/serve.mjs",
+    "companion": "node companion/server.mjs",
+    "e2e": "python tests/e2e.py",
+    "test:native": "python tests/native-platform.py --camera",
+    "camera:assets": "node scripts/vendor-camera.mjs",
+    "lint": "node scripts/lint.mjs",
+    "format": "node scripts/format.mjs --check",
+    "format:write": "node scripts/format.mjs --write",
+    "verify": "node scripts/format.mjs --check && node scripts/lint.mjs && node scripts/build.mjs && node --test tests/*.node.mjs"
+  }
+}
