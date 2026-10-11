@@ -1,4 +1,4 @@
-import { calibrationQuality, features, GESTURES, GestureGate, LearnedClassifier, RuleRecognizer, validFrame, validateCalibration, type Calibration, type Gesture, type LandmarkFrame } from '../gesture/engine.js';
+import { calibrationQuality, CAPTURE_WINDOW_MS, features, GESTURES, GestureGate, LandmarkWindow, LearnedClassifier, RuleRecognizer, validFrame, validateCalibration, type Calibration, type Gesture, type LandmarkFrame } from '../gesture/engine.js';
 import { chromeApi } from '../extension/chrome.js';
 import { isRecord } from '../core/contracts.js';
 import type { Intent } from '../core/machine.js';
@@ -24,11 +24,11 @@ let inFlight = false;
 let generation = 0;
 let running = false;
 let lastCaptured = 0;
-let sequence: LandmarkFrame[] = [];
+const sequence = new LandmarkWindow();
 let recording: {
   gesture: Gesture;
   start: number;
-  frames: LandmarkFrame[];
+  window: LandmarkWindow;
 } | null = null;
 const rules = new RuleRecognizer();
 const gate = new GestureGate();
@@ -59,7 +59,7 @@ async function send(type: string, extra: Record<string, unknown> = {}): Promise<
 function setStatus(text: string, state: 'inactive' | 'starting' | 'active' | 'failed'): void { status.textContent = text; void send('status', { status: state }).catch(() => { }); }
 function displayCalibration(): void {
   const quality = calibrationQuality(calibration);
-  document.querySelector('#calibration-quality')!.textContent = quality.ready ? 'Ready. Classifier frozen for ordinary use.' : quality.issues.slice(0, 4).join(' · ');
+  document.querySelector('#calibration-quality')!.textContent = quality.ready ? `Ready. ${quality.accepted}/${quality.total} saved examples pass recognition. Live accuracy still needs a hand check. Your saved profile is unchanged during use.` : quality.issues.join(' · ');
   document.querySelector('#calibration-counts')!.textContent = GESTURES.map(gesture => `${gesture}: ${(calibration.samples[gesture] ?? []).length}/3`).join('  |  ');
   classifier = quality.ready ? new LearnedClassifier(calibration) : null;
   if (extension && !classifier)
@@ -67,8 +67,11 @@ function displayCalibration(): void {
 }
 async function saveCalibration(): Promise<void> {
   calibration.savedAt = new Date().toISOString();
-  if (extension)
-    await chromeApi().runtime.sendMessage({ type: 'CALIBRATION_SAVE', value: calibration });
+  if (extension) {
+    const receipt = await chromeApi().runtime.sendMessage({ type: 'CALIBRATION_SAVE', value: calibration });
+    if (!isRecord(receipt) || receipt.ok !== true)
+      throw new Error('Calibration could not be saved. Your previous saved profile is still available.');
+  }
   else
     localStorage.setItem('witwitty-v2-calibration', JSON.stringify(calibration));
   displayCalibration();
@@ -101,39 +104,48 @@ function receiveFrame(frame: LandmarkFrame): void {
   inFlight = false;
   if (!running)
     return;
+  if (recording && frame.at - recording.start > 6000) {
+    recording = null;
+    status.textContent = 'Recording timed out. No samples changed. Keep one hand steadily in view before trying again.';
+  }
   if (!validFrame(frame)) {
-    sequence = [];
+    sequence.clear();
+    recording?.window.clear();
     gate.accept({ at: frame.at, gesture: 'none', confidence: 0 });
     document.querySelector('#recognized')!.textContent = 'No single stable hand';
     controlStatus.textContent = 'Keep one well-lit hand fully in view.';
     return;
   }
   sequence.push(frame);
-  sequence = sequence.filter(previous => frame.at - previous.at <= 350).slice(-24);
   if (recording) {
     if (frame.handedness !== calibration.handedness) {
       recording = null;
       status.textContent = 'Wrong hand for this profile. Re-record with the selected hand.';
       return;
     }
-    recording.frames.push(frame);
-    if (frame.at - recording.start >= 650) {
+    if (frame.at < recording.start) {
+      status.textContent = 'Get ready. Recording starts after the one-second countdown.';
+      return;
+    }
+    recording.window.push(frame);
+    status.textContent = `Recording ${recording.gesture}. Perform the gesture now.`;
+    if (recording.window.ready) {
       const record = recording;
       recording = null;
-      if (record.frames.length < 5) {
-        status.textContent = 'Not enough stable frames. Record again.';
-        return;
-      }
       const previous = calibration.samples[record.gesture] ?? [];
-      calibration.samples[record.gesture] = [...previous, features(record.frames)].slice(-12);
-      void saveCalibration().then(() => { status.textContent = `Recorded ${record.gesture}. Only numeric calibration features were saved.`; });
+      calibration.samples[record.gesture] = [...previous, features(record.window.frames)].slice(-12);
+      void saveCalibration().then(() => { status.textContent = `Recorded ${record.gesture} from ${record.window.frames.length} stable frames. Only numeric calibration features were saved.`; }).catch(error => {
+        calibration.samples[record.gesture] = previous;
+        displayCalibration();
+        status.textContent = error instanceof Error ? error.message : 'Calibration save failed.';
+      });
     }
   }
   let sample = rules.sample(frame, viewport);
   if (extension) {
-    sample = classifier?.predict(sequence) ?? { at: frame.at, gesture: 'none', confidence: 0 };
+    sample = sequence.ready ? classifier?.predict(sequence.frames) ?? { at: frame.at, gesture: 'none', confidence: 0 } : { at: frame.at, gesture: 'none', confidence: 0 };
     sample.point = { x: (1 - frame.landmarks[8]!.x) * viewport.width, y: frame.landmarks[8]!.y * viewport.height };
-    sample.deltaY = Math.max(-100, Math.min(100, -features(sequence)[6]! * 110));
+    sample.deltaY = sequence.ready ? Math.max(-100, Math.min(100, -features(sequence.frames)[6]! * 110)) : 0;
   }
   document.querySelector('#recognized')!.textContent = `${sample.gesture} · ${Math.round(sample.confidence * 100)}% score`;
   if (frame.handedness !== calibration.handedness && extension) {
@@ -206,7 +218,7 @@ function stop(): void {
   inFlight = false;
   rules.clear();
   gate.reset();
-  sequence = [];
+  sequence.clear();
   enabled.checked = false;
   controlStatus.textContent = 'Gesture controls are off.';
   lastAction.textContent = '';
@@ -302,11 +314,15 @@ document.querySelector<HTMLButtonElement>('#record')!.onclick = () => {
   }
   enabled.checked = false;
   gate.reset();
-  recording = { gesture: gestureSelect.value as Gesture, start: performance.now(), frames: [] };
-  status.textContent = `Perform ${recording.gesture} now. Recording numeric features for 650 ms.`;
+  recording = { gesture: gestureSelect.value as Gesture, start: performance.now() + 1000, window: new LandmarkWindow() };
+  status.textContent = `Get ready for ${recording.gesture}. Recording starts in one second and captures ${CAPTURE_WINDOW_MS} ms of stable tracking.`;
 };
-document.querySelector<HTMLButtonElement>('#clear-gesture')!.onclick = () => { enabled.checked = false; delete calibration.samples[gestureSelect.value as Gesture]; void saveCalibration(); };
-document.querySelector<HTMLButtonElement>('#reset-calibration')!.onclick = () => { enabled.checked = false; calibration = { version: 1, handedness: hand.value as 'Left' | 'Right', samples: {}, savedAt: new Date().toISOString() }; void saveCalibration(); };
+function reportSaveFailure(error: unknown): void {
+  enabled.checked = false;
+  status.textContent = error instanceof Error ? error.message : 'Calibration save failed.';
+}
+document.querySelector<HTMLButtonElement>('#clear-gesture')!.onclick = () => { enabled.checked = false; recording = null; delete calibration.samples[gestureSelect.value as Gesture]; void saveCalibration().catch(reportSaveFailure); };
+document.querySelector<HTMLButtonElement>('#reset-calibration')!.onclick = () => { enabled.checked = false; recording = null; calibration = { version: 1, handedness: hand.value as 'Left' | 'Right', samples: {}, savedAt: new Date().toISOString() }; void saveCalibration().catch(reportSaveFailure); };
 document.querySelector<HTMLButtonElement>('#export-calibration')!.onclick = () => {
   void (async () => {
     const saved = extension ? await chromeApi().runtime.sendMessage({ type: 'CALIBRATION_LOAD' }) : JSON.parse(localStorage.getItem('witwitty-v2-calibration') ?? 'null');
@@ -322,7 +338,17 @@ document.querySelector<HTMLButtonElement>('#export-calibration')!.onclick = () =
     status.textContent = 'Downloaded saved calibration: numeric gesture features only. Your profile is unchanged.';
   })().catch(error => { status.textContent = error instanceof Error ? error.message : 'Calibration download failed.'; });
 };
-hand.onchange = () => { enabled.checked = false; calibration.handedness = hand.value as 'Left' | 'Right'; calibration.samples = {}; void saveCalibration(); };
+hand.onchange = () => {
+  enabled.checked = false;
+  recording = null;
+  sequence.clear();
+  if (Object.values(calibration.samples).some(rows => rows.length)) {
+    hand.value = calibration.handedness;
+    status.textContent = `Your ${calibration.handedness} profile was kept. Download it before using Reset full calibration to change hands.`;
+    return;
+  }
+  calibration.handedness = hand.value as 'Left' | 'Right';
+};
 enabled.onchange = () => { if (!running || !session || (extension && !classifier)) {
   enabled.checked = false;
   status.textContent = 'Start the camera, connect an active article, and complete calibration for extension control.';

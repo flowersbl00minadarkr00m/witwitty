@@ -228,6 +228,16 @@ try:
                 check('uncalibrated native camera cannot enable gesture actions', True)
                 camera.get_by_role('button', name='Stop & release camera', exact=True).click()
                 check('native extension camera stop releases tracks', camera.locator('#preview').evaluate('(video) => video.srcObject === null'))
+                # Optional private profile stays outside source and is used only in this disposable browser.
+                if os.environ.get('WW_CALIBRATION_AUDIT_FILE'):
+                    personal_profile = json.loads(Path(os.environ['WW_CALIBRATION_AUDIT_FILE']).read_text(encoding='utf-8-sig'))
+                    camera.evaluate("profile => chrome.runtime.sendMessage({type:'CALIBRATION_SAVE',value:profile})", personal_profile)
+                    camera.reload()
+                    expect(camera.locator('#calibration-quality')).to_contain_text('30/30 saved examples pass')
+                    with camera.expect_download() as personal_download:
+                        camera.get_by_role('button', name='Download calibration data', exact=True).click()
+                    check('private existing profile loads and exports unchanged after recognition upgrade', json.loads(Path(personal_download.value.path()).read_text()) == personal_profile)
+                    camera.screenshot(path=str(artifacts / 'camera-existing-profile.png'), full_page=True)
                 # Controlled landmarks isolate classifier/gate/message wiring from physical recognition.
                 landmark_fixture = json.loads(subprocess.check_output(['node', '--input-type=module', '-e',
                     "import {syntheticFrame} from './v2/dist/fixtures/gestures.js'; import {features,GESTURES} from './v2/dist/gesture/engine.js'; const frame=syntheticFrame('point',1000); const profile={version:1,handedness:'Right',savedAt:new Date().toISOString(),samples:Object.fromEntries(GESTURES.map((g,i)=>[g,Array.from({length:3},()=>g==='point'?features([frame]):Array.from({length:8},(_,c)=>c===i%8?(i<8?1:-1):0))]))}; console.log(JSON.stringify({frame,profile}));"], cwd=ROOT.parent, encoding='utf-8'))
@@ -252,8 +262,30 @@ try:
                     camera.get_by_role('button', name='Download calibration data', exact=True).click()
                 downloaded_profile = json.loads(Path(profile_download.value.path()).read_text())
                 check('native calibration export contains the saved numeric profile without changing it', downloaded_profile == landmark_fixture['profile'] and set(downloaded_profile) == {'version','handedness','savedAt','samples'})
+                camera.locator('#handedness').select_option('Left')
+                expect(camera.locator('#handedness')).to_have_value('Right')
+                expect(camera.locator('#camera-status')).to_contain_text('profile was kept')
+                check('changing hand cannot erase or relabel a saved profile', camera.evaluate("() => chrome.runtime.sendMessage({type:'CALIBRATION_LOAD'})") == landmark_fixture['profile'])
                 camera.get_by_role('button', name='Start camera', exact=True).click()
                 expect(camera.locator('#camera-status')).to_contain_text('Camera active')
+                camera.locator('#record').click()
+                expect(camera.locator('#camera-status')).to_contain_text('Get ready')
+                expect(camera.locator('#camera-status')).to_contain_text('Recorded point from', timeout=10000)
+                updated_profile = camera.evaluate("() => chrome.runtime.sendMessage({type:'CALIBRATION_LOAD'})")
+                check('countdown recording saves one repetition through the actual storage path', len(updated_profile['samples']['point']) == 4 and all(updated_profile['samples'][g] == rows for g, rows in landmark_fixture['profile']['samples'].items() if g != 'point'))
+                camera.evaluate('''() => {
+                  const send = chrome.runtime.sendMessage.bind(chrome.runtime);
+                  chrome.runtime.sendMessage = message => message.type === 'CALIBRATION_SAVE' ? Promise.resolve({ok:false}) : send(message);
+                }''')
+                camera.locator('#record').click()
+                expect(camera.locator('#camera-status')).to_contain_text('could not be saved', timeout=10000)
+                expect(camera.locator('#calibration-counts')).to_contain_text('point: 4/3')
+                check('failed save is reported and does not change the persisted profile', camera.evaluate("() => chrome.runtime.sendMessage({type:'CALIBRATION_LOAD'})") == updated_profile)
+                camera.evaluate('() => window.fixtureFrame.hands = 2')
+                camera.locator('#record').click()
+                expect(camera.locator('#camera-status')).to_contain_text('Recording timed out', timeout=10000)
+                check('invalid tracking cannot save a repetition and recording times out', camera.evaluate("() => chrome.runtime.sendMessage({type:'CALIBRATION_LOAD'})") == updated_profile)
+                camera.evaluate('() => window.fixtureFrame.hands = 1')
                 camera.locator('#enable-controls').check()
                 expect(camera.locator('#recognized')).to_contain_text('point')
                 expect(camera.locator('#last-action')).to_contain_text('Article received: pointing.')

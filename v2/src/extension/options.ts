@@ -51,7 +51,7 @@ async function load(): Promise<void> {
   const profile = await chrome.runtime.sendMessage({ type: 'CALIBRATION_LOAD' });
   try {
     const quality = calibrationQuality(validateCalibration(profile));
-    document.querySelector('#calibration')!.textContent = quality.ready ? 'Personal classifier ready. Frozen during use.' : quality.issues.join(' · ');
+    document.querySelector('#calibration')!.textContent = quality.ready ? `Personal classifier ready: ${quality.accepted}/${quality.total} saved examples pass. Live accuracy still needs a hand check.` : quality.issues.join(' · ');
   }
   catch {
     document.querySelector('#calibration')!.textContent = 'No personal calibration. Open Camera from an activated article to set it up.';

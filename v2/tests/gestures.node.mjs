@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { GestureGate, RuleRecognizer, features, validFrame, GESTURES, validateCalibration, calibrationQuality, LearnedClassifier } from '../dist/gesture/engine.js';
+import { GestureGate, RuleRecognizer, features, validFrame, GESTURES, validateCalibration, calibrationQuality, LearnedClassifier, LandmarkWindow, CAPTURE_WINDOW_MS } from '../dist/gesture/engine.js';
 import { gestureTrace, ADVERSARIAL_GESTURES, syntheticFrame } from '../dist/fixtures/gestures.js';
 import { keyboardIntent } from '../dist/browser/inputs.js';
 const expected = { point: 'MOVE_FOCUS', lock: 'LOCK_TARGET', explain: 'SET_MODE', rewrite: 'SET_MODE', 'depth-left': 'CHANGE_DEPTH', 'depth-right': 'CHANGE_DEPTH', 'zoom-in': 'ZOOM_IN', 'zoom-out': 'ZOOM_OUT', scroll: 'SCROLL', restore: 'RESTORE' };
@@ -138,6 +138,69 @@ test('calibration storage rejects corrupt and oversized numeric profiles', () =>
   assert.equal(validateCalibration(valid).version, 1);
   assert.throws(() => validateCalibration({ ...valid, samples: { point: [[NaN]] } }));
   assert.throws(() => validateCalibration({ ...valid, samples: { magic: [[1, 1, 1, 1, 1, 1, 1, 1]] } }));
+});
+
+test('close but distinct classes pass readiness and their actual action thresholds', () => {
+  const calibration = profile();
+  calibration.samples.restore = calibration.samples.lock.map(row => row.map(value => value + .15));
+  const before = JSON.stringify(calibration);
+  assert.equal(calibrationQuality(calibration).ready, true);
+  const classifier = new LearnedClassifier(calibration);
+  for (const gesture of ['lock', 'restore']) {
+    const gate = new GestureGate();
+    const intents = gestureTrace(gesture, 1000).flatMap(sample => gate.accept(classifier.predictFeatures(calibration.samples[gesture][0], sample.at)));
+    assert.equal(intents.at(-1)?.type, expected[gesture]);
+  }
+  assert.equal(JSON.stringify(calibration), before);
+});
+
+test('opposite motions remain separate examples without accepting the unrecorded average', () => {
+  const calibration = profile();
+  calibration.samples.scroll = [-.5, .5, -.45].map(motion => [1.4, 1.4, 1.4, 1.4, 1, 0, motion, 0]);
+  const classifier = new LearnedClassifier(calibration);
+  for (const row of calibration.samples.scroll) {
+    assert.equal(classifier.predictFeatures(row, 1000).gesture, 'scroll');
+    assert.equal(classifier.predictFeatures(row.map(v => v + .01), 1000).gesture, 'scroll');
+  }
+  assert.equal(classifier.predictFeatures([1.4, 1.4, 1.4, 1.4, 1, 0, 0, 0], 1000).gesture, 'none');
+});
+
+test('readiness catches a conflicting example even when class averages are far apart', () => {
+  const calibration = profile();
+  calibration.samples.lock[0] = [...calibration.samples.point[0]];
+  const quality = calibrationQuality(calibration);
+  assert.equal(quality.ready, false);
+  assert.ok(quality.accepted < quality.total);
+  assert.throws(() => new LearnedClassifier(calibration), /insufficient separation/);
+});
+
+test('recording and live windows extract identical motion and clear stale or wrong-hand history', () => {
+  const live = new LandmarkWindow();
+  const recording = new LandmarkWindow();
+  for (let at = 0; at <= 720; at += 72) {
+    const frame = syntheticFrame('point', at, .5, .8 - at / 10000);
+    live.push(frame);
+    recording.push(frame);
+  }
+  assert.equal(live.ready, true);
+  assert.deepEqual(features(live.frames), features(recording.frames));
+  assert.ok(live.frames.at(-1).at - live.frames[0].at >= CAPTURE_WINDOW_MS);
+  live.push(syntheticFrame('point', 1100));
+  assert.equal(live.ready, false);
+  assert.equal(live.frames.length, 1);
+  live.push({ ...syntheticFrame('point', 1172), handedness: 'Left' });
+  assert.equal(live.frames.length, 1);
+  live.push(syntheticFrame('point', 1172));
+  assert.equal(live.frames.length, 0);
+  recording.push({ ...syntheticFrame('point', 800), hands: 2 });
+  assert.equal(recording.ready, false);
+});
+
+test('learned prediction abstains on mixed-hand and discontinuous sequences', () => {
+  const classifier = new LearnedClassifier(profile());
+  const first = syntheticFrame('point', 1000);
+  for (const last of [syntheticFrame('point', 900), syntheticFrame('point', 1500), { ...syntheticFrame('point', 1100), handedness: 'Left' }])
+    assert.equal(classifier.predict([first, last]).gesture, 'none');
 });
 test('mouse/keyboard actions use the same domain vocabulary', () => {
   const key = name => ({ key: name, altKey: false, ctrlKey: false, metaKey: false, shiftKey: false });

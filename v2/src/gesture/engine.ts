@@ -23,6 +23,28 @@ export interface GestureSample {
   ambiguous?: boolean;
 }
 export const GESTURE_POLICY = Object.freeze({ confidence: 0.86, destructiveConfidence: 0.93, dwellMs: 160, restoreDwellMs: 450, cooldownMs: 650, dropoutMs: 250 });
+export const CAPTURE_WINDOW_MS = 650;
+/** Keep one frame at the window boundary so recording and live motion use the same interval. */
+export class LandmarkWindow {
+  frames: LandmarkFrame[] = [];
+  clear(): void { this.frames = []; }
+  push(frame: LandmarkFrame): void {
+    const last = this.frames.at(-1);
+    if (!validFrame(frame) || (last && frame.at <= last.at)) {
+      this.clear();
+      return;
+    }
+    if (last && (frame.at - last.at > GESTURE_POLICY.dropoutMs || frame.handedness !== last.handedness))
+      this.clear();
+    this.frames.push(frame);
+    while (this.frames.length > 2 && this.frames[1]!.at <= frame.at - CAPTURE_WINDOW_MS)
+      this.frames.shift();
+    this.frames = this.frames.slice(-64);
+  }
+  get ready(): boolean {
+    return this.frames.length >= 5 && this.frames.at(-1)!.at - this.frames[0]!.at >= CAPTURE_WINDOW_MS;
+  }
+}
 const distance = (a: Landmark, b: Landmark) => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
 export function validFrame(frame: LandmarkFrame): boolean {
   return Number.isFinite(frame.at) && frame.at >= 0 && frame.hands === 1 && frame.landmarks.length === 21 &&
@@ -190,12 +212,39 @@ export function validateCalibration(value: unknown): Calibration {
   return { version: 1, handedness: value.handedness as 'Left' | 'Right', samples, savedAt: value.savedAt };
 }
 const norm = (a: number[], b: number[]) => Math.sqrt(a.reduce((sum, value, i) => sum + (value - (b[i] ?? 0)) ** 2, 0) / a.length);
+type Prototype = { gesture: Gesture; vector: number[]; radius: number };
+function prototypes(calibration: Calibration): Prototype[] {
+  const rows = GESTURES.flatMap(gesture => (calibration.samples[gesture] ?? []).map(vector => ({ gesture, vector: [...vector] })));
+  return rows.map(row => {
+    const separation = Math.min(...rows.filter(other => other.gesture !== row.gesture).map(other => norm(row.vector, other.vector)));
+    // Each example owns a bounded neighborhood, never the space between distant repetitions.
+    return { ...row, radius: Math.min(0.18, separation / 2) };
+  });
+}
+function classify(model: Prototype[], vector: number[], at: number): GestureSample {
+  if (vector.length !== 8 || vector.some(n => !Number.isFinite(n)) || !model.length)
+    return { at, gesture: 'none', confidence: 0 };
+  const candidates = model.map(row => ({ ...row, distance: norm(vector, row.vector) })).sort((a, b) => a.distance - b.distance);
+  const best = candidates[0]!;
+  const second = candidates.find(row => row.gesture !== best.gesture);
+  if (!second || best.radius <= 0)
+    return { at, gesture: 'none', confidence: 0, ambiguous: true };
+  const margin = (second.distance - best.distance) / Math.max(second.distance, 0.000001);
+  const ambiguous = second.distance < 0.06 || margin < 0.5;
+  const proximity = Math.max(0, Math.min(1, 2 - 2 * best.distance / best.radius));
+  const confidence = ambiguous ? 0 : proximity * Math.min(1, margin / 0.5);
+  return { at, gesture: confidence >= GESTURE_POLICY.confidence ? best.gesture : 'none', confidence, ambiguous };
+}
 export function calibrationQuality(calibration: Calibration): {
   ready: boolean;
   issues: string[];
+  accepted: number;
+  total: number;
 } {
   const issues: string[] = [];
-  const centers: Partial<Record<Gesture, number[]>> = {};
+  const model = prototypes(calibration);
+  let accepted = 0;
+  let total = 0;
   for (const gesture of GESTURES) {
     const samples = calibration.samples[gesture] ?? [];
     if (samples.length < 3) {
@@ -203,25 +252,23 @@ export function calibrationQuality(calibration: Calibration): {
       continue;
     }
     const center = samples[0]!.map((_, column) => samples.reduce((sum, row) => sum + row[column]!, 0) / samples.length);
-    centers[gesture] = center;
     if (samples.some(sample => norm(sample, center) > 0.6))
       issues.push(`${gesture}: inconsistent repetitions`);
+    const threshold = ['rewrite', 'restore'].includes(gesture) ? GESTURE_POLICY.destructiveConfidence : GESTURE_POLICY.confidence;
+    const passed = samples.filter(row => {
+      const prediction = classify(model, row, 0);
+      return prediction.gesture === gesture && !prediction.ambiguous && prediction.confidence >= threshold;
+    }).length;
+    accepted += passed;
+    total += samples.length;
+    if (passed !== samples.length)
+      issues.push(`${gesture}: insufficient separation; ${passed}/${samples.length} saved examples pass recognition`);
   }
-  const entries = Object.entries(centers);
-  entries.forEach(([name, center], i) => entries.slice(i + 1).forEach(([other, second]) => {
-    if (norm(center, second) < 0.12)
-      issues.push(`${name} and ${other}: insufficient separation`);
-  }));
-  return { ready: issues.length === 0, issues };
+  return { ready: issues.length === 0, issues, accepted, total };
 }
 /** Frozen prototype classifier. Confidence is a distance/margin score, not a calibrated probability. */
 export class LearnedClassifier {
-  private centers: Array<{
-    gesture: Gesture;
-    center: number[];
-    spread: number;
-    radius: number;
-  }>;
+  private model: Prototype[];
   readonly handedness: 'Left' | 'Right';
   constructor(value: Calibration) {
     const calibration = validateCalibration(value);
@@ -229,30 +276,15 @@ export class LearnedClassifier {
     if (!quality.ready)
       throw new Error(quality.issues.join('; '));
     this.handedness = calibration.handedness;
-    this.centers = GESTURES.map(gesture => {
-      const rows = calibration.samples[gesture]!;
-      const center = rows[0]!.map((_, i) => rows.reduce((sum, row) => sum + row[i]!, 0) / rows.length);
-      const spread = Math.max(...rows.map(row => norm(row, center)));
-      return { gesture, center, spread, radius: Math.max(0.18, spread * 2) };
-    });
+    this.model = prototypes(calibration);
   }
   predict(sequence: LandmarkFrame[]): GestureSample {
     const frame = sequence.at(-1);
-    if (!frame || !validFrame(frame) || frame.handedness !== this.handedness)
+    if (!frame || !sequence.every(item => validFrame(item) && item.handedness === this.handedness) || sequence.some((item, i) => i > 0 && (item.at <= sequence[i - 1]!.at || item.at - sequence[i - 1]!.at > GESTURE_POLICY.dropoutMs)))
       return { at: frame?.at ?? 0, gesture: 'none', confidence: 0 };
     return this.predictFeatures(features(sequence), frame.at);
   }
   predictFeatures(vector: number[], at: number): GestureSample {
-    if (vector.length !== 8 || vector.some(n => !Number.isFinite(n)))
-      return { at, gesture: 'none', confidence: 0 };
-    const candidates = this.centers.map(center => ({ ...center, distance: norm(vector, center.center) })).sort((a, b) => a.distance - b.distance);
-    const best = candidates[0]!;
-    const second = candidates[1]!;
-    // Saved repetitions define the observed variation, not low-confidence outliers.
-    // Penalize only distance beyond that variation. Preserve the outer abstention
-    // radius and the competing-class margin; unfamiliar/ambiguous poses still abstain.
-    const excess = Math.max(0, best.distance - best.spread);
-    const confidence = Math.max(0, Math.min(1, 1 - excess / (best.radius - best.spread))) * Math.min(1, (second.distance - best.distance) / 0.2);
-    return { at, gesture: confidence >= GESTURE_POLICY.confidence ? best.gesture : 'none', confidence, ambiguous: second.distance - best.distance < 0.12 };
+    return classify(this.model, vector, at);
   }
 }
