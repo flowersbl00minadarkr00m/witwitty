@@ -30,6 +30,8 @@ The demo computes translation/scale-normalized pose and short-sequence motion fe
 
 The feature vector has eight dimensions: four finger extension ratios, pinch distance, horizontal/vertical hand velocity and pinch-change velocity. The classifier is trained from labeled examples locally and frozen during normal use. It is not an online self-training neural model and its fixture performance is not evidence of population-wide hand recognition quality.
 
+The classifier treats the measured spread of recorded repetitions as the learned variation for that class. Distance beyond that spread reduces its score. The outer rejection radius and competing-class margin remain in force. This corrects a bug found on 11 October 2026 where a ready profile could reject its own recorded examples: repetitions 0.06 from the class center scored 0.67 against the 0.86 action threshold. Tests now check all ten classes with varying repetitions through the shared action gate, and retain unfamiliar-pose and ambiguity rejection. Existing saved profiles need no migration or reset. Physical accuracy still requires verification with the user's hand.
+
 ## Calibration workflow
 
 1. Activate an article through the extension, open Camera, and run optional asset setup/rebuild first when required.

@@ -78,6 +78,39 @@ test('learned classifier is frozen and abstains far from calibration', () => {
   assert.equal(classifier.predictFeatures(input, 1000).gesture, 'point');
   assert.equal(classifier.predictFeatures(Array(8).fill(4), 2000).gesture, 'none');
 });
+test('calibration variation remains recognizable and reaches the shared gesture gate', () => {
+  const calibration = profile();
+  for (const gesture of GESTURES) {
+    const center = calibration.samples[gesture][0];
+    calibration.samples[gesture] = [-.06, 0, .06].map(offset => center.map(value => value + offset));
+  }
+  assert.equal(calibrationQuality(calibration).ready, true);
+  const classifier = new LearnedClassifier(calibration);
+  for (const gesture of GESTURES) {
+    for (const row of calibration.samples[gesture]) {
+      const gate = new GestureGate();
+      const predictions = gestureTrace(gesture, 1000).map(sample => ({
+        ...classifier.predictFeatures(row, sample.at), point: { x: 100, y: 200 }, deltaY: -25,
+      }));
+      assert.ok(predictions.every(sample => sample.gesture === gesture), `${gesture} must recognize its recorded variation`);
+      assert.equal(predictions.flatMap(sample => gate.accept(sample)).at(-1)?.type, expected[gesture]);
+    }
+  }
+});
+test('variation tolerance still rejects unfamiliar and competing-class poses', () => {
+  const calibration = profile();
+  const center = calibration.samples.point[0];
+  calibration.samples.point = [-.06, 0, .06].map(offset => center.map(value => value + offset));
+  const classifier = new LearnedClassifier(calibration);
+  assert.equal(classifier.predictFeatures(center.map(value => value + .3), 1000).gesture, 'none');
+  const midpoint = center.map((value, i) => (value + calibration.samples.lock[0][i]) / 2);
+  const ambiguous = classifier.predictFeatures(midpoint, 2000);
+  assert.equal(ambiguous.gesture, 'none');
+  assert.equal(ambiguous.ambiguous, true);
+  const originalPrediction = classifier.predictFeatures(calibration.samples.point[0], 3000);
+  calibration.samples.point[0].fill(4);
+  assert.deepEqual(classifier.predictFeatures(center.map(value => value - .06), 3000), originalPrediction);
+});
 test('calibration storage rejects corrupt and oversized numeric profiles', () => {
   const valid = profile();
   assert.equal(validateCalibration(valid).version, 1);

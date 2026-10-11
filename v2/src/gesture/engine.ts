@@ -199,6 +199,7 @@ export class LearnedClassifier {
   private centers: Array<{
     gesture: Gesture;
     center: number[];
+    spread: number;
     radius: number;
   }>;
   readonly handedness: 'Left' | 'Right';
@@ -211,7 +212,8 @@ export class LearnedClassifier {
     this.centers = GESTURES.map(gesture => {
       const rows = calibration.samples[gesture]!;
       const center = rows[0]!.map((_, i) => rows.reduce((sum, row) => sum + row[i]!, 0) / rows.length);
-      return { gesture, center, radius: Math.max(0.18, ...rows.map(row => norm(row, center) * 2)) };
+      const spread = Math.max(...rows.map(row => norm(row, center)));
+      return { gesture, center, spread, radius: Math.max(0.18, spread * 2) };
     });
   }
   predict(sequence: LandmarkFrame[]): GestureSample {
@@ -226,7 +228,11 @@ export class LearnedClassifier {
     const candidates = this.centers.map(center => ({ ...center, distance: norm(vector, center.center) })).sort((a, b) => a.distance - b.distance);
     const best = candidates[0]!;
     const second = candidates[1]!;
-    const confidence = Math.max(0, Math.min(1, 1 - best.distance / best.radius)) * Math.min(1, (second.distance - best.distance) / 0.2);
+    // Saved repetitions define the observed variation, not low-confidence outliers.
+    // Penalize only distance beyond that variation. Preserve the outer abstention
+    // radius and the competing-class margin; unfamiliar/ambiguous poses still abstain.
+    const excess = Math.max(0, best.distance - best.spread);
+    const confidence = Math.max(0, Math.min(1, 1 - excess / (best.radius - best.spread))) * Math.min(1, (second.distance - best.distance) / 0.2);
     return { at, gesture: confidence >= GESTURE_POLICY.confidence ? best.gesture : 'none', confidence, ambiguous: second.distance - best.distance < 0.12 };
   }
 }
