@@ -35,6 +35,28 @@ test('a confidence dropout clears dwell; backwards time is ignored', () => {
   assert.deepEqual(gate.accept({ at: 1170, gesture: 'lock', confidence: .99 }), []);
   assert.deepEqual(gate.accept({ at: 1000, gesture: 'lock', confidence: .99 }), []);
 });
+test('gesture diagnostics distinguish brief recognition, action, dropout and held latch', () => {
+  const gate = new GestureGate();
+  assert.deepEqual(gate.accept({ at: 1000, gesture: 'lock', confidence: .99 }), []);
+  assert.equal(gate.decision, 'dwell');
+  assert.deepEqual(gate.accept({ at: 1080, gesture: 'none', confidence: .2 }), []);
+  assert.equal(gate.decision, 'uncertain');
+  assert.deepEqual(gate.accept({ at: 1160, gesture: 'lock', confidence: .99 }), []);
+  assert.equal(gate.decision, 'dwell');
+  assert.equal(gate.accept({ at: 1320, gesture: 'lock', confidence: .99 })[0].type, 'LOCK_TARGET');
+  assert.equal(gate.decision, 'action');
+  assert.deepEqual(gate.accept({ at: 1400, gesture: 'lock', confidence: .99 }), []);
+  assert.equal(gate.decision, 'cooldown');
+  for (const at of [1600, 1800, 2000])
+    assert.deepEqual(gate.accept({ at, gesture: 'lock', confidence: .99 }), []);
+  assert.equal(gate.decision, 'latched');
+  assert.deepEqual(gate.accept({ at: 2080, gesture: 'restore', confidence: .9 }), []);
+  assert.equal(gate.decision, 'uncertain');
+  assert.deepEqual(gate.accept({ at: 2160, gesture: 'point', confidence: .99, ambiguous: true }), []);
+  assert.equal(gate.decision, 'ambiguous');
+  gate.reset();
+  assert.equal(gate.decision, 'idle');
+});
 for (const [pose, gesture] of [['point', 'point'], ['pinch', 'lock'], ['fist', 'restore']])
   test(`21 landmark ${pose} geometry`, () => {
     const recognizer = new RuleRecognizer();

@@ -105,13 +105,15 @@ export class RuleRecognizer {
 }
 /** This gate is shared by rules, learned predictions and recorded classifications. */
 export class GestureGate {
+  decision: 'idle' | 'invalid' | 'uncertain' | 'ambiguous' | 'dwell' | 'cooldown' | 'latched' | 'action' = 'idle';
   private candidate: Gesture | 'none' = 'none';
   private since = 0;
   private lastAt = -1;
   private cooldownUntil = 0;
   private latched: Gesture | 'none' = 'none';
-  reset(): void { this.candidate = 'none'; this.lastAt = -1; this.latched = 'none'; this.cooldownUntil = 0; }
+  reset(): void { this.candidate = 'none'; this.lastAt = -1; this.latched = 'none'; this.cooldownUntil = 0; this.decision = 'idle'; }
   accept(sample: GestureSample): Intent[] {
+    this.decision = 'invalid';
     if (!Number.isFinite(sample.at) || sample.at <= this.lastAt)
       return [];
     if (sample.at - this.lastAt > GESTURE_POLICY.dropoutMs) {
@@ -121,6 +123,7 @@ export class GestureGate {
     this.lastAt = sample.at;
     const threshold = ['restore', 'rewrite'].includes(sample.gesture) ? GESTURE_POLICY.destructiveConfidence : GESTURE_POLICY.confidence;
     if (sample.ambiguous || !Number.isFinite(sample.confidence) || sample.confidence < threshold || sample.confidence > 1 || sample.gesture === 'none') {
+      this.decision = sample.ambiguous ? 'ambiguous' : 'uncertain';
       this.candidate = 'none';
       this.latched = 'none';
       return [];
@@ -130,14 +133,31 @@ export class GestureGate {
       this.since = sample.at;
       this.latched = 'none';
     }
-    if (sample.at - this.since < (sample.gesture === 'restore' ? GESTURE_POLICY.restoreDwellMs : GESTURE_POLICY.dwellMs))
+    if (sample.at - this.since < (sample.gesture === 'restore' ? GESTURE_POLICY.restoreDwellMs : GESTURE_POLICY.dwellMs)) {
+      this.decision = 'dwell';
       return [];
-    if (sample.gesture === 'point')
-      return sample.point && Number.isFinite(sample.point.x) && Number.isFinite(sample.point.y) ? [{ type: 'MOVE_FOCUS', point: sample.point }] : [];
-    if (sample.gesture === 'scroll')
-      return Number.isFinite(sample.deltaY) ? [{ type: 'SCROLL', deltaY: Math.max(-100, Math.min(100, sample.deltaY!)) }] : [];
-    if (sample.at < this.cooldownUntil || this.latched === sample.gesture)
+    }
+    if (sample.gesture === 'point') {
+      if (!sample.point || !Number.isFinite(sample.point.x) || !Number.isFinite(sample.point.y))
+        return [];
+      this.decision = 'action';
+      return [{ type: 'MOVE_FOCUS', point: sample.point }];
+    }
+    if (sample.gesture === 'scroll') {
+      if (!Number.isFinite(sample.deltaY))
+        return [];
+      this.decision = 'action';
+      return [{ type: 'SCROLL', deltaY: Math.max(-100, Math.min(100, sample.deltaY!)) }];
+    }
+    if (sample.at < this.cooldownUntil) {
+      this.decision = 'cooldown';
       return [];
+    }
+    if (this.latched === sample.gesture) {
+      this.decision = 'latched';
+      return [];
+    }
+    this.decision = 'action';
     this.latched = sample.gesture;
     this.cooldownUntil = sample.at + GESTURE_POLICY.cooldownMs;
     switch (sample.gesture) {

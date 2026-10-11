@@ -9,6 +9,7 @@ const state = { local: {}, session: {} };
 const sent = [];
 const executed = [];
 let access;
+let cameraReceipt = { ok: true };
 const area = name => ({
   async get(key) { await Promise.resolve(); return structuredClone({ [key]: state[name][key] }); },
   async set(value) { await Promise.resolve(); Object.assign(state[name], structuredClone(value)); },
@@ -22,7 +23,7 @@ globalThis.chrome = {
   action: { onClicked: event('click'), setBadgeText: async () => { }, setTitle: async () => { } },
   scripting: { executeScript: async (operation) => { executed.push(operation); } },
   windows: { create: async (operation) => { sent.push(operation); } },
-  tabs: { onRemoved: event('removed'), onUpdated: event('updated'), sendMessage: async (tab, message) => { sent.push({ tab, message }); return { ok: true }; } },
+  tabs: { onRemoved: event('removed'), onUpdated: event('updated'), sendMessage: async (tab, message) => { sent.push({ tab, message }); return message.type === 'CAMERA_INTENT' ? cameraReceipt : { ok: true }; } },
 };
 const source = readFileSync(new URL('../extension/background.js', import.meta.url), 'utf8').replace(/from '(.\/[^']+)'/g, (_, path) => `from '${new URL('../dist/' + path.slice(2), import.meta.url).href}'`);
 await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));
@@ -77,6 +78,18 @@ test('camera target is session bound and rejects forged internal approval intent
   await message({ type: 'CAMERA_INTENT', session: sessionA, intent: { type: 'LOCK_TARGET' } }, camera);
   assert.equal(sent.at(-1).tab, 1);
   assert.equal(sent.at(-1).message.intent.type, 'LOCK_TARGET');
+});
+test('camera action succeeds only when the active article acknowledges it', async () => {
+  const camera = { id, url: chrome.runtime.getURL('camera.html?tab=1') };
+  const input = { type: 'CAMERA_INTENT', session: sessionA, intent: { type: 'SCROLL', deltaY: 50 } };
+  assert.equal((await message(input, camera)).ok, true);
+  try {
+    cameraReceipt = undefined;
+    assert.equal((await message(input, camera)).ok, false);
+    cameraReceipt = { ok: false };
+    assert.equal((await message(input, camera)).ok, false);
+  }
+  finally { cameraReceipt = { ok: true }; }
 });
 test('a stale session ending cannot abort newer model work in the same tab', async () => {
   const originalFetch = globalThis.fetch;

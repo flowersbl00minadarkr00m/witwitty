@@ -13,6 +13,8 @@ const video = document.querySelector<HTMLVideoElement>('#preview')!;
 const gestureSelect = document.querySelector<HTMLSelectElement>('#gesture')!;
 const hand = document.querySelector<HTMLSelectElement>('#handedness')!;
 const enabled = document.querySelector<HTMLInputElement>('#enable-controls')!;
+const controlStatus = document.querySelector<HTMLElement>('#control-status')!;
+const lastAction = document.querySelector<HTMLElement>('#last-action')!;
 let calibration: Calibration = { version: 1, handedness: 'Right', samples: {}, savedAt: new Date().toISOString() };
 let classifier: LearnedClassifier | null = null;
 let worker: Worker | null = null;
@@ -50,11 +52,11 @@ async function send(type: string, extra: Record<string, unknown> = {}): Promise<
   if (!session)
     return;
   if (extension)
-    await chromeApi().runtime.sendMessage({ type: `CAMERA_${type.toUpperCase()}`, session, ...extra }).catch(() => { });
+    await chromeApi().runtime.sendMessage({ type: `CAMERA_${type.toUpperCase()}`, session, ...extra });
   else
     channel?.postMessage({ kind: type, session, ...extra });
 }
-function setStatus(text: string, state: 'inactive' | 'starting' | 'active' | 'failed'): void { status.textContent = text; void send('status', { status: state }); }
+function setStatus(text: string, state: 'inactive' | 'starting' | 'active' | 'failed'): void { status.textContent = text; void send('status', { status: state }).catch(() => { }); }
 function displayCalibration(): void {
   const quality = calibrationQuality(calibration);
   document.querySelector('#calibration-quality')!.textContent = quality.ready ? 'Ready. Classifier frozen for ordinary use.' : quality.issues.slice(0, 4).join(' · ');
@@ -103,6 +105,7 @@ function receiveFrame(frame: LandmarkFrame): void {
     sequence = [];
     gate.accept({ at: frame.at, gesture: 'none', confidence: 0 });
     document.querySelector('#recognized')!.textContent = 'No single stable hand';
+    controlStatus.textContent = 'Keep one well-lit hand fully in view.';
     return;
   }
   sequence.push(frame);
@@ -133,15 +136,62 @@ function receiveFrame(frame: LandmarkFrame): void {
     sample.deltaY = Math.max(-100, Math.min(100, -features(sequence)[6]! * 110));
   }
   document.querySelector('#recognized')!.textContent = `${sample.gesture} · ${Math.round(sample.confidence * 100)}% score`;
+  if (frame.handedness !== calibration.handedness && extension) {
+    controlStatus.textContent = `Detector sees ${frame.handedness}; your saved profile is ${calibration.handedness}. Use your calibrated hand. Do not change the Hand setting.`;
+    gate.reset();
+    return;
+  }
   if (enabled.checked && !recording && session) {
-    void send('gesture', { gesture: sample.gesture, confidence: sample.confidence, classifier: extension ? 'frozen-calibration' : 'deterministic-rules' });
-    for (const intent of gate.accept(sample))
+    void send('gesture', { gesture: sample.gesture, confidence: sample.confidence, classifier: extension ? 'frozen-calibration' : 'deterministic-rules' }).catch(() => { });
+    const intents = gate.accept(sample);
+    const feedback = {
+      idle: 'Controls ready.', invalid: 'Waiting for a valid tracking sample.',
+      uncertain: 'No confident calibrated gesture match. Try the pose you recorded.',
+      ambiguous: 'Two gestures are too similar. No action sent.',
+      dwell: 'Gesture recognized. Keep it steady a little longer.',
+      cooldown: 'Wait briefly before the next action.', latched: 'Action already triggered. Return to a neutral pose before repeating.',
+      action: 'Gesture passed the action gate.',
+    };
+    controlStatus.textContent = feedback[gate.decision];
+    for (const intent of intents)
       void sendIntent(intent);
   }
-  else
+  else {
     gate.reset();
+    controlStatus.textContent = recording ? 'Gesture controls are off while recording.' : 'Gesture controls are off. Enable them after calibration is ready.';
+  }
 }
-async function sendIntent(intent: Intent): Promise<void> { await send('intent', { intent }); }
+async function sendIntent(intent: Intent): Promise<void> {
+  const run = generation;
+  let targetLocked: unknown;
+  try {
+    if (!session)
+      throw new Error('Missing article session');
+    if (extension) {
+      const receipt = await chromeApi().runtime.sendMessage({ type: 'CAMERA_INTENT', session, intent });
+      if (!isRecord(receipt) || receipt.ok !== true)
+        throw new Error('Article did not acknowledge the action');
+      targetLocked = receipt.targetLocked;
+    }
+    else
+      await send('intent', { intent });
+    if (run !== generation || !enabled.checked)
+      return;
+    if (targetLocked === false && ['LOCK_TARGET', 'SET_MODE', 'CHANGE_DEPTH', 'ZOOM_IN', 'ZOOM_OUT'].includes(intent.type)) {
+      lastAction.textContent = 'No passage is locked. Point at a passage, then pinch to lock it. You can also click a paragraph with the mouse first.';
+      return;
+    }
+    const names: Record<string, string> = { MOVE_FOCUS: 'pointing', SCROLL: 'scrolling', LOCK_TARGET: 'target lock', SET_MODE: intent.type === 'SET_MODE' ? intent.mode : 'mode change', CHANGE_DEPTH: 'depth change', ZOOM_IN: 'zoom in', ZOOM_OUT: 'zoom out', RESTORE: 'restore' };
+    lastAction.textContent = `${extension ? 'Article received' : 'Sent to demo'}: ${names[intent.type] ?? 'gesture action'}.`;
+  }
+  catch {
+    if (run !== generation || !enabled.checked)
+      return;
+    enabled.checked = false;
+    gate.reset();
+    lastAction.textContent = 'Article connection lost. Close this camera window. Activate the article, then open Camera from its controls again.';
+  }
+}
 function stop(): void {
   generation++;
   running = false;
@@ -158,6 +208,8 @@ function stop(): void {
   gate.reset();
   sequence = [];
   enabled.checked = false;
+  controlStatus.textContent = 'Gesture controls are off.';
+  lastAction.textContent = '';
   setStatus('Camera inactive. No frames retained.', 'inactive');
   document.querySelector<HTMLButtonElement>('#start-camera')!.disabled = false;
 }

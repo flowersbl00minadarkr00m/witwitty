@@ -201,6 +201,7 @@ try:
                 camera.get_by_role('button', name='Stop & release camera', exact=True).click()
                 camera.close()
                 # Extension origin has a different CSP and worker/module path.
+                page.set_viewport_size({'width': 1200, 'height': 500})
                 page.goto('http://127.0.0.1:4174/native-article-camera')
                 action(page)
                 expect(page.locator('[data-ww-owned="hud"]')).to_have_count(1)
@@ -214,11 +215,55 @@ try:
                 expect(camera.locator('#camera-status')).to_contain_text('Camera active', timeout=30000)
                 expect(camera.locator('#recognized')).to_contain_text('No single stable hand', timeout=10000)
                 check('native extension camera runs its local detector under extension CSP', True)
+                target = camera.evaluate("() => chrome.runtime.sendMessage({type: 'CAMERA_TARGET'})")
+                receipt = camera.evaluate("session => chrome.runtime.sendMessage({type: 'CAMERA_INTENT', session, intent: {type: 'SET_MODE', mode: 'Explain'}})", target['session'])
+                check('native camera action is acknowledged and reports a missing locked target', receipt.get('ok') is True and receipt.get('targetLocked') is False)
+                page.evaluate('() => window.scrollTo(0, 0)')
+                receipt = camera.evaluate("session => chrome.runtime.sendMessage({type: 'CAMERA_INTENT', session, intent: {type: 'SCROLL', deltaY: 100}})", target['session'])
+                check('native camera action reaches the article and actually scrolls it', receipt.get('ok') is True and page.evaluate('() => window.scrollY') > 0)
+                expect(camera.locator('#control-status')).to_contain_text('Keep one well-lit hand')
+                camera.screenshot(path=str(artifacts / 'camera-control-status.png'))
                 camera.locator('#enable-controls').click()
                 expect(camera.locator('#enable-controls')).not_to_be_checked()
                 check('uncalibrated native camera cannot enable gesture actions', True)
                 camera.get_by_role('button', name='Stop & release camera', exact=True).click()
                 check('native extension camera stop releases tracks', camera.locator('#preview').evaluate('(video) => video.srcObject === null'))
+                # Controlled landmarks isolate classifier/gate/message wiring from physical recognition.
+                landmark_fixture = json.loads(subprocess.check_output(['node', '--input-type=module', '-e',
+                    "import {syntheticFrame} from './v2/dist/fixtures/gestures.js'; import {features,GESTURES} from './v2/dist/gesture/engine.js'; const frame=syntheticFrame('point',1000); const profile={version:1,handedness:'Right',savedAt:new Date().toISOString(),samples:Object.fromEntries(GESTURES.map((g,i)=>[g,Array.from({length:3},()=>g==='point'?features([frame]):Array.from({length:8},(_,c)=>c===i%8?(i<8?1:-1):0))]))}; console.log(JSON.stringify({frame,profile}));"], cwd=ROOT.parent, encoding='utf-8'))
+                saved = camera.evaluate("profile => chrome.runtime.sendMessage({type:'CALIBRATION_SAVE',value:profile})", landmark_fixture['profile'])
+                check('native controlled profile persists through the actual calibration storage path', saved.get('ok') is True)
+                camera.add_init_script('''window.fixtureFrame = ''' + json.dumps(landmark_fixture['frame']) + ''';
+                  window.Worker = class {
+                    postMessage(data) {
+                      if (data.type === 'init') queueMicrotask(() => this.onmessage?.({data:{type:'ready'}}));
+                      if (data.type === 'frame') {
+                        window.fixtureFrameCount = (window.fixtureFrameCount ?? 0) + 1;
+                        data.bitmap.close();
+                        const frame=structuredClone(window.fixtureFrame); frame.at=data.at;
+                        queueMicrotask(() => this.onmessage?.({data:{type:'landmarks',frame}}));
+                      }
+                    }
+                    terminate() {}
+                  };''')
+                camera.reload()
+                expect(camera.locator('#calibration-quality')).to_contain_text('Ready.')
+                camera.get_by_role('button', name='Start camera', exact=True).click()
+                expect(camera.locator('#camera-status')).to_contain_text('Camera active')
+                camera.locator('#enable-controls').check()
+                expect(camera.locator('#recognized')).to_contain_text('point')
+                expect(camera.locator('#last-action')).to_contain_text('Article received: pointing.')
+                check('controlled landmarks pass recognition, dwell and actual article acknowledgment', True)
+                camera.screenshot(path=str(artifacts / 'camera-action-received.png'))
+                page.reload()
+                expect(camera.locator('#last-action')).to_contain_text('Article connection lost.')
+                expect(camera.locator('#enable-controls')).not_to_be_checked()
+                frame_count = camera.evaluate('() => window.fixtureFrameCount')
+                camera.wait_for_function('count => window.fixtureFrameCount >= count + 6', arg=frame_count)
+                expect(camera.locator('#last-action')).to_contain_text('Article connection lost.')
+                check('stale camera connection disables controls and shows recovery instead of silent failure', True)
+                camera.screenshot(path=str(artifacts / 'camera-connection-lost.png'))
+                camera.get_by_role('button', name='Stop & release camera', exact=True).click()
                 camera.close()
             check('native platform run has no uncaught browser exceptions', not errors)
         finally:

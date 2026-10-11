@@ -45,6 +45,10 @@ The extension's Options page can view readiness or reset the calibration. Profil
 
 Physical verification must assess lighting, camera placement, hand occlusion, swipe/dwell duration, mirrored pan direction, pinch-versus-zoom confusion, multi-window ergonomics and fatigue. Adjust the versioned policy or features with new regression traces, not hidden ad hoc UI callbacks.
 
+The camera's control status distinguishes an uncertain/ambiguous match, insufficient dwell, cooldown and a held gesture that has already triggered. Its last-action line remains visible after a prediction changes back to `none`. Extension actions require acknowledgment from the active article; a missing receiver or ended session disables controls and shows instructions to reopen Camera from the article. Explain, Rewrite and semantic changes require a locked passage, so the acknowledgment also reports whether a target is locked. Receipt means the article dispatched the input, not that a model review passed or that content changed. A gesture label alone does not prove that an action reached the page. A wrong-hand diagnostic does not reset calibration; use the calibrated hand rather than changing the Hand setting.
+
+Verification on 11 October 2026: 239 Node tests, 28 localhost browser checks and 27 native extension/camera checks pass. Native checks cover actual article scrolling and acknowledgment, a saved controlled profile, controlled landmarks through recognition/dwell/receipt, and persistent recovery feedback after the article session ends. Controlled landmarks and synthetic video isolate the software path; they do not prove recognition accuracy with a real hand. Late action receipts cannot overwrite connection-loss feedback after controls are disabled.
+
 ## Replay
 
 `fixtures/gestures.ts` supplies deterministic classification traces, low-confidence/ambiguity examples and synthetic 21-landmark sequences. `canonicalReplay` feeds the same gate and state machine, visits all five depths/scopes, and restores. It waits for each transformation to settle and supports interruption. Replay is explicitly identified as replay; it is not evidence of physical camera performance.

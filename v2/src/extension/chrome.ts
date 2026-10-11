@@ -18,8 +18,8 @@ interface ChromeApi {
     }): Port;
     sendMessage(value: unknown): Promise<unknown>;
     onMessage: {
-      addListener(callback: (value: unknown) => void): void;
-      removeListener(callback: (value: unknown) => void): void;
+      addListener(callback: (value: unknown, sender: unknown, respond: (value: unknown) => void) => void): void;
+      removeListener(callback: (value: unknown, sender: unknown, respond: (value: unknown) => void) => void): void;
     };
   };
 }

@@ -26,7 +26,7 @@ export async function activate(): Promise<void> {
     const instance = new Runtime(document, transport);
     runtime = instance;
     const cleanups = [installLensStyle(document), referenceInputs(instance), mountHUD(instance, new ExtensionLibrary(), () => { void chrome.runtime.sendMessage({ type: 'OPEN_CAMERA' }); }, () => dispose?.())];
-    const receive = (value: unknown) => {
+    const receive = (value: unknown, _sender: unknown, respond: (value: unknown) => void) => {
       if (!isRecord(value) || value.session !== instance.state.sessionId)
         return;
       if (value.type === 'NAVIGATED') {
@@ -35,8 +35,10 @@ export async function activate(): Promise<void> {
       }
       if (value.type === 'CAMERA_INTENT') {
         const intent = normalizeInputIntent(value.intent);
-        if (intent)
+        if (intent) {
           instance.dispatch(intent, 'webcam');
+          respond({ ok: true, targetLocked: !!instance.state.targetId });
+        }
       }
       if (value.type === 'CAMERA_STATUS' && ['inactive', 'starting', 'active', 'failed'].includes(String(value.status)))
         instance.dispatch({ type: 'CAMERA', status: value.status as 'inactive' | 'starting' | 'active' | 'failed' });

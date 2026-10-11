@@ -34,7 +34,10 @@ async function relayCamera(message, sender) {
     const intent = normalizeInputIntent(message.intent);
     if (!intent)
       throw new Error('Invalid input intent');
-    return chrome.tabs.sendMessage(tabId, { type: 'CAMERA_INTENT', session: session.session, intent });
+    const receipt = await chrome.tabs.sendMessage(tabId, { type: 'CAMERA_INTENT', session: session.session, intent });
+    if (!isRecord(receipt) || receipt.ok !== true)
+      throw new Error('Article did not acknowledge camera action');
+    return receipt;
   }
   if (message.type === 'CAMERA_STATUS' && ['inactive', 'starting', 'active', 'failed'].includes(message.status))
     return chrome.tabs.sendMessage(tabId, { type: message.type, session: session.session, status: message.status });
