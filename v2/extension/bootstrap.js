@@ -1,0 +1,1 @@
+void import(chrome.runtime.getURL('extension/content.js')).then(module => module.activate()).catch(error => console.warn('WitWitty could not activate this page:', error instanceof Error ? error.message : 'unsupported page'));

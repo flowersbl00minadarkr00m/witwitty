@@ -1,0 +1,9 @@
+dist/
+dist-extension/
+artifacts/
+assets/vendor/
+.env
+.env.*
+!.env.example
+__pycache__/
+assets/vendor-install/
