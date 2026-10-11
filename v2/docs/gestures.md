@@ -41,6 +41,8 @@ The classifier treats the measured spread of recorded repetitions as the learned
 5. Enable controls only after the profile passes quality checks. Extension mode never silently substitutes the demo rule recognizer for missing personal calibration.
 6. Recalibrate one gesture or reset the whole profile as needed. Changing handedness clears the old profile. Controls are disabled while recording/changing calibration.
 
+Use **Download calibration data** to inspect the saved profile without changing it. The local JSON contains only the validated handedness, timestamp, version and eight-number gesture summaries; it excludes camera images, article content and provider credentials. Individual frame counts, capture duration and motion trajectories are not retained, so they cannot be reconstructed from this export. Recordings use a 650 ms interval while live recognition uses a rolling 350 ms window. The current readiness report is a count/spread/separation check, not a held-out recognition test; a profile can be marked ready while its examples remain below the classifier's action threshold. Diagnose the saved examples and new gestures before claiming reliable physical control.
+
 The extension's Options page can view readiness or reset the calibration. Profile persistence uses trusted local extension storage; the demo's optional numeric profile stays in its own local storage. Neither is synchronized to a cloud account.
 
 Physical verification must assess lighting, camera placement, hand occlusion, swipe/dwell duration, mirrored pan direction, pinch-versus-zoom confusion, multi-window ergonomics and fatigue. Adjust the versioned policy or features with new regression traces, not hidden ad hoc UI callbacks.

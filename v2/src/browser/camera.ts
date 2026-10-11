@@ -307,6 +307,21 @@ document.querySelector<HTMLButtonElement>('#record')!.onclick = () => {
 };
 document.querySelector<HTMLButtonElement>('#clear-gesture')!.onclick = () => { enabled.checked = false; delete calibration.samples[gestureSelect.value as Gesture]; void saveCalibration(); };
 document.querySelector<HTMLButtonElement>('#reset-calibration')!.onclick = () => { enabled.checked = false; calibration = { version: 1, handedness: hand.value as 'Left' | 'Right', samples: {}, savedAt: new Date().toISOString() }; void saveCalibration(); };
+document.querySelector<HTMLButtonElement>('#export-calibration')!.onclick = () => {
+  void (async () => {
+    const saved = extension ? await chromeApi().runtime.sendMessage({ type: 'CALIBRATION_LOAD' }) : JSON.parse(localStorage.getItem('witwitty-v2-calibration') ?? 'null');
+    if (!saved)
+      throw new Error('No saved calibration is available to download.');
+    const profile = validateCalibration(saved);
+    const url = URL.createObjectURL(new Blob([JSON.stringify(profile, null, 2)], { type: 'application/json' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `witwitty-calibration-${profile.handedness.toLowerCase()}.json`;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    status.textContent = 'Downloaded saved calibration: numeric gesture features only. Your profile is unchanged.';
+  })().catch(error => { status.textContent = error instanceof Error ? error.message : 'Calibration download failed.'; });
+};
 hand.onchange = () => { enabled.checked = false; calibration.handedness = hand.value as 'Left' | 'Right'; calibration.samples = {}; void saveCalibration(); };
 enabled.onchange = () => { if (!running || !session || (extension && !classifier)) {
   enabled.checked = false;

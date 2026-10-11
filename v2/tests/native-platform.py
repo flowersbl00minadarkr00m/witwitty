@@ -248,6 +248,10 @@ try:
                   };''')
                 camera.reload()
                 expect(camera.locator('#calibration-quality')).to_contain_text('Ready.')
+                with camera.expect_download() as profile_download:
+                    camera.get_by_role('button', name='Download calibration data', exact=True).click()
+                downloaded_profile = json.loads(Path(profile_download.value.path()).read_text())
+                check('native calibration export contains the saved numeric profile without changing it', downloaded_profile == landmark_fixture['profile'] and set(downloaded_profile) == {'version','handedness','savedAt','samples'})
                 camera.get_by_role('button', name='Start camera', exact=True).click()
                 expect(camera.locator('#camera-status')).to_contain_text('Camera active')
                 camera.locator('#enable-controls').check()
